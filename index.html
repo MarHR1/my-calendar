@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>HR Calendar Pro</title>
+    <title>Календарь (МСК)</title>
     <script src="https://telegram.org/js/telegram-web-app.js"></script>
     <style>
         :root {
@@ -80,7 +80,7 @@
             <span class="tz-val" id="cityDisplay">Загрузка...</span>
         </div>
         <div class="tz-row">
-            <span class="tz-label">Разница с вами:</span>
+            <span class="tz-label">Разница с МСК:</span>
             <span class="tz-val" id="diffDisplay">...</span>
         </div>
     </div>
@@ -109,49 +109,43 @@
         tg.MainButton.show();
 
         const urlParams = new URLSearchParams(window.location.search);
-        // Смещение города кандидата (UTC). Если не передано - считаем как у рекрутера
-        const localOffsetMinutes = new Date().getTimezoneOffset() * -1; // В минутах (Москва = 180)
-        const localOffsetHours = localOffsetMinutes / 60;
         
-        // Берем offset из URL или используем локальный
-        const targetOffset = urlParams.get('offset') ? parseFloat(urlParams.get('offset')) : localOffsetHours;
+        // --- НАСТРОЙКИ ВРЕМЕНИ ---
+        const MOSCOW_OFFSET = 3; // Москва всегда UTC+3
+        // Смещение кандидата из URL (или 3 по дефолту)
+        const targetOffset = urlParams.get('offset') ? parseFloat(urlParams.get('offset')) : 3;
         const cityName = urlParams.get('city') || 'Местное время';
 
         const dateInput = document.getElementById('dateInput');
         const timeInput = document.getElementById('timeInput');
         
-        // Разница в часах между Кандидатом и Рекрутером
-        // Пример: Кандидат (UTC+5), Рекрутер (UTC+3). diff = 2 часа.
-        // Если Рекрутер ставит 14:00 (по Кандидату), для Рекрутера это 12:00.
-        const diffHours = targetOffset - localOffsetHours;
+        // Разница: Кандидат (5) - Москва (3) = +2 часа
+        const diffHours = targetOffset - MOSCOW_OFFSET;
 
         function init() {
-            // Установка мин. даты (сегодня)
+            // Мин. дата - сегодня
             const now = new Date();
             dateInput.min = now.toISOString().split('T')[0];
 
-            // Инфо панель
+            // 1. Показываем инфо
             document.getElementById('cityDisplay').textContent = `${cityName} (UTC${targetOffset >= 0 ? '+' : ''}${targetOffset})`;
             
+            const diffElem = document.getElementById('diffDisplay');
             if (diffHours === 0) {
-                document.getElementById('diffDisplay').textContent = "Нет разницы";
-                document.getElementById('diffDisplay').style.color = "green";
+                diffElem.textContent = "Нет разницы (время МСК)";
+                diffElem.style.color = "green";
             } else {
                 const sign = diffHours > 0 ? "+" : "";
-                document.getElementById('diffDisplay').textContent = `${sign}${diffHours} ч. (у кандидата)`;
-                document.getElementById('diffDisplay').style.color = "var(--btn-color)";
+                diffElem.textContent = `${sign}${diffHours} ч. от МСК`;
+                diffElem.style.color = "var(--btn-color)";
             }
 
             renderDateChips();
             renderTimeChips();
             
-            // СИНХРОНИЗАЦИЯ: Если меняем input руками, обновляем чипсы
-            dateInput.addEventListener('change', () => {
-                updateChipsUI('dateChips', dateInput.value);
-            });
-            timeInput.addEventListener('change', () => {
-                updateChipsUI('timeChips', timeInput.value);
-            });
+            // Листенеры изменений
+            dateInput.addEventListener('change', () => updateChipsUI('dateChips', dateInput.value));
+            timeInput.addEventListener('change', () => updateChipsUI('timeChips', timeInput.value));
         }
 
         function renderDateChips() {
@@ -161,7 +155,7 @@
             for (let i = 0; i < 7; i++) {
                 const d = new Date();
                 d.setDate(d.getDate() + i);
-                const dateStr = d.toISOString().split('T')[0]; // YYYY-MM-DD
+                const dateStr = d.toISOString().split('T')[0];
                 
                 let label = days[d.getDay()];
                 if (i === 0) label = "Сегодня";
@@ -169,7 +163,7 @@
 
                 const chip = document.createElement('div');
                 chip.className = 'chip';
-                chip.dataset.value = dateStr; // Храним значение для поиска
+                chip.dataset.value = dateStr;
                 chip.textContent = `${label} ${d.getDate()}`;
                 
                 chip.onclick = () => {
@@ -205,35 +199,25 @@
             });
         }
 
-        // === ГЛАВНАЯ ФУНКЦИЯ ВАЛИДАЦИИ ===
+        // === ЖЕЛЕЗОБЕТОННАЯ ВАЛИДАЦИЯ ВРЕМЕНИ ===
         function isValidTime() {
             if (!dateInput.value || !timeInput.value) return false;
 
-            // 1. Создаем дату встречи
-            const selectedStr = `${dateInput.value}T${timeInput.value}:00`;
-            const selectedDate = new Date(selectedStr); // Это дата в локальном времени браузера (как будто ввели для себя)
+            // Парсим ввод (YYYY-MM-DD и HH:MM)
+            const [year, month, day] = dateInput.value.split('-').map(Number);
+            const [hours, minutes] = timeInput.value.split(':').map(Number);
 
-            // 2. Но мы ввели время КАНДИДАТА. Нам нужно понять, сколько времени СЕЙЧАС у кандидата.
-            // Сейчас (UTC)
-            const now = new Date();
-            
-            // Чтобы сравнить корректно, приведем "Выбранное время кандидата" к "Реальному моменту времени (Timestamp)"
-            // Выбранное время - (Смещение кандидата) = Время UTC
-            // Но JS Date создается в локальном смещении.
-            // Алгоритм:
-            // Взять выбранный Timestamp.
-            // Вычесть разницу поясов (diffHours).
-            // Если Рекрутер (UTC+3) ставит 14:00 для Кандидата (UTC+5),
-            // То это 12:00 по времени Рекрутера.
-            
-            const adjustedTimestamp = selectedDate.getTime() - (diffHours * 60 * 60 * 1000);
-            const realMeetingDate = new Date(adjustedTimestamp);
+            // 1. Получаем Timestamp встречи в UTC
+            // Формула: UTC = (Время встречи) - (Смещение кандидата)
+            // Пример: Встреча в 14:00 в Алматы (UTC+5). В UTC это 09:00.
+            // Date.UTC считает месяцы с 0 (январь = 0)
+            const meetingUTC = Date.UTC(year, month - 1, day, hours, minutes) - (targetOffset * 60 * 60 * 1000);
 
-            // 3. Сравниваем с текущим моментом
-            if (realMeetingDate < now) {
-                return false; // В прошлом
-            }
-            return true;
+            // 2. Получаем текущее время в UTC
+            const nowUTC = Date.now();
+
+            // 3. Сравниваем
+            return meetingUTC >= nowUTC;
         }
 
         tg.MainButton.onClick(function() {
@@ -241,7 +225,6 @@
             const time = timeInput.value;
             const comment = document.getElementById('commentInput').value;
 
-            // 1. Проверка на пустоту
             if (!date || !time) {
                 tg.HapticFeedback.notificationOccurred('error');
                 if(!date) dateInput.classList.add('error');
@@ -253,12 +236,11 @@
                 return;
             }
 
-            // 2. Проверка на прошлое
             if (!isValidTime()) {
                 tg.HapticFeedback.notificationOccurred('error');
                 tg.showPopup({
                     title: 'Ошибка времени',
-                    message: 'Вы выбрали время, которое уже прошло для этого кандидата.',
+                    message: 'Это время уже прошло (по часовому поясу кандидата).',
                     buttons: [{type: 'ok'}]
                 });
                 return;
@@ -266,7 +248,6 @@
 
             tg.MainButton.showProgress();
 
-            // Формируем красивую строку
             const fullStr = `${date} в ${time} (${cityName})`;
 
             const data = {
@@ -279,10 +260,7 @@
             tg.sendData(JSON.stringify(data));
         });
 
-        // Инициализация
         init();
-        
-        // Цвета темы
         document.body.style.backgroundColor = tg.themeParams.bg_color || '#ffffff';
         document.body.style.color = tg.themeParams.text_color || '#000000';
 
