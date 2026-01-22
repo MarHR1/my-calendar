@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>Календарь (МСК)</title>
+    <title>Smart Calendar</title>
     <script src="https://telegram.org/js/telegram-web-app.js"></script>
     <style>
         :root {
@@ -14,15 +14,20 @@
             --btn-text: var(--tg-theme-button-text-color, #fff);
             --secondary-bg: var(--tg-theme-secondary-bg-color, #f0f0f0);
             --danger: #ff3b30;
+            --weekend-bg: #fff0f0; /* Светло-красный для выходных */
+            --weekend-text: #d32f2f;
+            --night-opacity: 0.5;
         }
 
-        body { font-family: -apple-system, BlinkMacSystemFont, sans-serif; background: var(--bg-color); color: var(--text-color); padding: 16px; margin: 0; }
-        h3 { margin: 0 0 10px 0; font-size: 18px; }
+        body { font-family: -apple-system, BlinkMacSystemFont, sans-serif; background: var(--bg-color); color: var(--text-color); padding: 16px; margin: 0; padding-bottom: 80px; /* Отступ под кнопку */ }
         
+        h3 { margin: 15px 0 10px 0; font-size: 16px; font-weight: 600; text-transform: uppercase; color: var(--hint-color); letter-spacing: 0.5px; }
+        
+        /* Инфо панель */
         .timezone-info {
             background: var(--secondary-bg);
-            padding: 10px;
-            border-radius: 8px;
+            padding: 12px;
+            border-radius: 12px;
             font-size: 13px;
             margin-bottom: 20px;
             border-left: 4px solid var(--btn-color);
@@ -31,108 +36,180 @@
         .tz-label { color: var(--hint-color); }
         .tz-val { font-weight: bold; }
 
-        .chips-container {
+        /* --- ДАТЫ --- */
+        .chips-scroll {
             display: flex;
             gap: 8px;
             overflow-x: auto;
             padding-bottom: 5px;
-            margin-bottom: 15px;
+            margin-bottom: 5px;
             scrollbar-width: none;
         }
-        .chips-container::-webkit-scrollbar { display: none; }
+        .chips-scroll::-webkit-scrollbar { display: none; }
 
-        .chip {
+        .date-chip {
             background: var(--secondary-bg);
-            padding: 8px 12px;
-            border-radius: 16px;
-            font-size: 14px;
-            white-space: nowrap;
+            padding: 10px 14px;
+            border-radius: 12px;
+            min-width: 60px;
+            text-align: center;
             cursor: pointer;
+            border: 2px solid transparent;
             transition: 0.2s;
-            border: 1px solid transparent;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
         }
-        .chip.active {
-            background: var(--btn-color);
-            color: var(--btn-text);
+        .date-chip span.day { font-size: 12px; opacity: 0.8; margin-bottom: 2px; }
+        .date-chip span.num { font-size: 18px; font-weight: bold; }
+
+        .date-chip.active { background: var(--btn-color); color: var(--btn-text); border-color: var(--btn-color); }
+        
+        /* Выходные */
+        .date-chip.weekend { background-color: var(--weekend-bg); color: var(--weekend-text); }
+        .date-chip.weekend.active { background-color: var(--btn-color); color: white; }
+        
+        /* Разделитель недели (отступ после воскресенья) */
+        .date-chip.sunday-end { margin-right: 20px; position: relative; }
+        .date-chip.sunday-end::after {
+            content: ''; position: absolute; right: -14px; top: 10%; height: 80%; width: 1px; background: #ddd;
         }
 
-        .input-group { margin-bottom: 20px; }
+        /* --- ВРЕМЯ (СЕТКА) --- */
+        .time-section { margin-bottom: 15px; }
+        .time-grid {
+            display: grid;
+            grid-template-columns: repeat(3, 1fr); /* 3 колонки */
+            gap: 8px;
+        }
+
+        .time-chip {
+            background: var(--secondary-bg);
+            padding: 10px 5px;
+            border-radius: 10px;
+            text-align: center;
+            cursor: pointer;
+            border: 2px solid transparent;
+            position: relative;
+        }
+        .time-chip.active { background: var(--btn-color); color: var(--btn-text); border-color: var(--btn-color); }
+
+        .t-main { font-size: 17px; font-weight: bold; display: block; }
+        .t-sub { font-size: 11px; opacity: 0.7; display: block; margin-top: 2px; }
+
+        /* Неудобное время */
+        .time-chip.night { opacity: var(--night-opacity); background: #eee; }
+        .time-chip.night::after { content: '🌑'; position: absolute; top: 2px; right: 2px; font-size: 10px; }
+
+        /* --- ПОЛЯ ВВОДА --- */
+        .input-group { margin-top: 20px; }
         label { display: block; margin-bottom: 8px; color: var(--hint-color); font-size: 14px; }
-        input, textarea {
+        textarea {
             width: 100%; padding: 12px; border-radius: 12px;
             border: 1px solid var(--secondary-bg);
             background: var(--secondary-bg);
             color: var(--text-color);
-            font-size: 16px; box-sizing: border-box; outline: none;
-            -webkit-appearance: none;
+            font-size: 16px; box-sizing: border-box; outline: none; resize: vertical; min-height: 60px;
         }
-        input:focus, textarea:focus { border: 1px solid var(--btn-color); }
+        textarea:focus { border: 1px solid var(--btn-color); }
+
+        /* --- КАРТОЧКА ПОДТВЕРЖДЕНИЯ --- */
+        .confirm-card {
+            background: var(--secondary-bg);
+            border-radius: 16px;
+            padding: 15px;
+            margin-top: 25px;
+            border: 1px solid transparent;
+            display: none; /* Скрыта по умолчанию */
+            animation: slideUp 0.3s ease-out;
+        }
+        .confirm-card.visible { display: block; border-color: var(--btn-color); }
         
-        .error { border-color: var(--danger) !important; animation: shake 0.4s; }
-        @keyframes shake { 0%, 100% {transform: translateX(0);} 25% {transform: translateX(-5px);} 75% {transform: translateX(5px);} }
+        .cc-header { font-size: 12px; color: var(--hint-color); text-transform: uppercase; margin-bottom: 8px; }
+        .cc-date { font-size: 18px; font-weight: bold; margin-bottom: 5px; }
+        .cc-time { font-size: 16px; margin-bottom: 5px; }
+        .cc-sub { color: var(--hint-color); font-size: 13px; }
+        .cc-highlight { color: var(--btn-color); font-weight: bold; }
+
+        @keyframes slideUp { from { transform: translateY(10px); opacity: 0; } to { transform: translateY(0); opacity: 1; } }
+
+        /* Скрытые инпуты для хранения значений */
+        .hidden-inputs { display: none; }
     </style>
 </head>
 <body>
 
-    <div class="timezone-info" id="tzInfo">
+    <div class="timezone-info">
         <div class="tz-row">
-            <span class="tz-label">Город кандидата:</span>
-            <span class="tz-val" id="cityDisplay">Загрузка...</span>
+            <span class="tz-label">Кандидат:</span>
+            <span class="tz-val" id="cityDisplay">...</span>
         </div>
         <div class="tz-row">
-            <span class="tz-label">Разница с МСК:</span>
+            <span class="tz-label">Разница:</span>
             <span class="tz-val" id="diffDisplay">...</span>
         </div>
     </div>
 
-    <h3>Дата</h3>
-    <div class="chips-container" id="dateChips"></div>
+    <h3>Выберите дату</h3>
+    <div class="chips-scroll" id="dateChips"></div>
+
+    <div id="timeContainer">
+        </div>
+
     <div class="input-group">
+        <label>Комментарий / Адрес</label>
+        <textarea id="commentInput" placeholder="Офис 205, спросить Ольгу..."></textarea>
+    </div>
+
+    <div class="confirm-card" id="confirmCard">
+        <div class="cc-header">Итоговое подтверждение</div>
+        <div class="cc-date" id="ccDate">...</div>
+        <div class="cc-time" id="ccTime">...</div>
+        <div class="cc-sub">Кандидат: <span id="ccCandidate">Иван</span></div>
+    </div>
+
+    <div class="hidden-inputs">
         <input type="date" id="dateInput">
-    </div>
-
-    <h3>Время (у кандидата)</h3>
-    <div class="chips-container" id="timeChips"></div>
-    <div class="input-group">
         <input type="time" id="timeInput">
-    </div>
-
-    <div class="input-group">
-        <label>Комментарий (необязательно)</label>
-        <textarea id="commentInput" placeholder="Адрес, код домофона..."></textarea>
     </div>
 
     <script>
         const tg = window.Telegram.WebApp;
         tg.expand();
         tg.MainButton.text = "ЗАПИСАТЬ";
-        tg.MainButton.show();
-
-        const urlParams = new URLSearchParams(window.location.search);
         
-        // --- НАСТРОЙКИ ВРЕМЕНИ ---
-        const MOSCOW_OFFSET = 3; // Москва всегда UTC+3
-        // Смещение кандидата из URL (или 3 по дефолту)
+        // --- ПАРАМЕТРЫ URL ---
+        const urlParams = new URLSearchParams(window.location.search);
+        const MOSCOW_OFFSET = 3; 
         const targetOffset = urlParams.get('offset') ? parseFloat(urlParams.get('offset')) : 3;
         const cityName = urlParams.get('city') || 'Местное время';
+        const candidateName = urlParams.get('name') || 'Кандидат'; // Можно передать ?name=Иван
+
+        // Разница: Кандидат(5) - МСК(3) = +2. 
+        // Если у кандидата 14:00, то по МСК = 14 - 2 = 12:00.
+        const diffHours = targetOffset - MOSCOW_OFFSET;
 
         const dateInput = document.getElementById('dateInput');
         const timeInput = document.getElementById('timeInput');
-        
-        // Разница: Кандидат (5) - Москва (3) = +2 часа
-        const diffHours = targetOffset - MOSCOW_OFFSET;
+        const confirmCard = document.getElementById('confirmCard');
+
+        // Глобальные переменные для красоты
+        let selectedDateObj = null; 
+        let selectedTimeStr = null;
 
         function init() {
-            // Мин. дата - сегодня
+            // Установка мин. даты
             const now = new Date();
             dateInput.min = now.toISOString().split('T')[0];
 
-            // 1. Показываем инфо
+            // Инфо
             document.getElementById('cityDisplay').textContent = `${cityName} (UTC${targetOffset >= 0 ? '+' : ''}${targetOffset})`;
-            
+            document.getElementById('ccCandidate').textContent = candidateName;
+
             const diffElem = document.getElementById('diffDisplay');
             if (diffHours === 0) {
-                diffElem.textContent = "Нет разницы (время МСК)";
+                diffElem.textContent = "Время МСК";
                 diffElem.style.color = "green";
             } else {
                 const sign = diffHours > 0 ? "+" : "";
@@ -141,82 +218,166 @@
             }
 
             renderDateChips();
-            renderTimeChips();
+            renderTimeSections(); // Новая функция рендера времени
             
-            // Листенеры изменений
-            dateInput.addEventListener('change', () => updateChipsUI('dateChips', dateInput.value));
-            timeInput.addEventListener('change', () => updateChipsUI('timeChips', timeInput.value));
+            // Следим за комментом
+            document.getElementById('commentInput').addEventListener('input', updateConfirmCard);
         }
 
+        // --- РЕНДЕР ДАТ ---
         function renderDateChips() {
             const container = document.getElementById('dateChips');
-            const days = ['Вс', 'Пн', 'Вт', 'Ср', 'Чт', 'Пт', 'Сб'];
+            const daysShort = ['Вс', 'Пн', 'Вт', 'Ср', 'Чт', 'Пт', 'Сб'];
             
-            for (let i = 0; i < 7; i++) {
+            // Генерируем 14 дней
+            for (let i = 0; i < 14; i++) {
                 const d = new Date();
                 d.setDate(d.getDate() + i);
                 const dateStr = d.toISOString().split('T')[0];
+                const dayOfWeek = d.getDay(); // 0 - Вс, 6 - Сб
                 
-                let label = days[d.getDay()];
-                if (i === 0) label = "Сегодня";
-                if (i === 1) label = "Завтра";
+                let dayLabel = daysShort[dayOfWeek];
+                if (i === 0) dayLabel = "Сегодня";
+                if (i === 1) dayLabel = "Завтра";
 
                 const chip = document.createElement('div');
-                chip.className = 'chip';
-                chip.dataset.value = dateStr;
-                chip.textContent = `${label} ${d.getDate()}`;
+                chip.className = 'date-chip';
+                
+                // 1. Визуальная работа с датами (Выходные)
+                if (dayOfWeek === 0 || dayOfWeek === 6) {
+                    chip.classList.add('weekend');
+                }
+                // Разделитель недель после воскресенья
+                if (dayOfWeek === 0) {
+                    chip.classList.add('sunday-end');
+                }
+
+                chip.innerHTML = `<span class="day">${dayLabel}</span><span class="num">${d.getDate()}</span>`;
                 
                 chip.onclick = () => {
+                    document.querySelectorAll('.date-chip').forEach(c => c.classList.remove('active'));
+                    chip.classList.add('active');
                     dateInput.value = dateStr;
-                    updateChipsUI('dateChips', dateStr);
+                    selectedDateObj = d;
+                    updateConfirmCard();
                 };
                 container.appendChild(chip);
             }
         }
 
-        function renderTimeChips() {
-            const container = document.getElementById('timeChips');
-            for (let hour = 9; hour <= 20; hour++) {
-                const timeStr = `${hour < 10 ? '0'+hour : hour}:00`;
-                
-                const chip = document.createElement('div');
-                chip.className = 'chip';
-                chip.dataset.value = timeStr;
-                chip.textContent = timeStr;
-                
-                chip.onclick = () => {
-                    timeInput.value = timeStr;
-                    updateChipsUI('timeChips', timeStr);
-                };
-                container.appendChild(chip);
-            }
-        }
+        // --- РЕНДЕР ВРЕМЕНИ (ГРУППИРОВКА) ---
+        function renderTimeSections() {
+            const container = document.getElementById('timeContainer');
+            
+            // Структура блоков
+            const sections = [
+                { id: 'morning', title: '🌅 Утро', range: [9, 10, 11] },
+                { id: 'day', title: '☀️ День', range: [12, 13, 14, 15, 16] },
+                { id: 'evening', title: '🌆 Вечер', range: [17, 18, 19, 20] }
+            ];
 
-        function updateChipsUI(containerId, value) {
-            document.querySelectorAll(`#${containerId} .chip`).forEach(c => {
-                if (c.dataset.value === value) c.classList.add('active');
-                else c.classList.remove('active');
+            sections.forEach(sec => {
+                // Заголовок
+                const header = document.createElement('h3');
+                header.textContent = sec.title;
+                container.appendChild(header);
+
+                // Сетка
+                const grid = document.createElement('div');
+                grid.className = 'time-grid';
+
+                sec.range.forEach(hour => {
+                    const chip = createTimeChip(hour);
+                    grid.appendChild(chip);
+                });
+
+                container.appendChild(grid);
             });
         }
 
-        // === ЖЕЛЕЗОБЕТОННАЯ ВАЛИДАЦИЯ ВРЕМЕНИ ===
+        function createTimeChip(hour) {
+            const timeStr = `${hour < 10 ? '0'+hour : hour}:00`;
+            const chip = document.createElement('div');
+            chip.className = 'time-chip';
+
+            // 2. Вычисляем время рекрутера (МСК)
+            // Время кандидата (hour) - Разница = Время МСК
+            // Пример: Кандидат 09:00 (UTC+5), МСК (UTC+3). Разница +2.
+            // МСК = 9 - 2 = 7:00.
+            let mskHour = hour - diffHours;
+            
+            // Нормализация (если вдруг перешли через сутки, хотя для 9-20 это редкость, но всё же)
+            if (mskHour < 0) mskHour += 24; 
+            if (mskHour >= 24) mskHour -= 24;
+
+            const mskTimeStr = `${mskHour < 10 ? '0'+mskHour : mskHour}:00`;
+
+            // 3. Индикация "Неудобного времени" (Ночь для рекрутера)
+            // Допустим, неудобно раньше 8:00 и позже 22:00
+            if (mskHour < 8 || mskHour >= 22) {
+                chip.classList.add('night');
+            }
+
+            // HTML чипса (Двойное время)
+            chip.innerHTML = `
+                <span class="t-main">${timeStr}</span>
+                <span class="t-sub">ваше: ${mskTimeStr}</span>
+            `;
+
+            chip.onclick = () => {
+                document.querySelectorAll('.time-chip').forEach(c => c.classList.remove('active'));
+                chip.classList.add('active');
+                timeInput.value = timeStr;
+                selectedTimeStr = timeStr;
+                
+                // Сохраняем "Ваше время" для карточки
+                chip.dataset.msk = mskTimeStr;
+                
+                updateConfirmCard();
+            };
+
+            return chip;
+        }
+
+        // --- ОБНОВЛЕНИЕ КАРТОЧКИ ---
+        function updateConfirmCard() {
+            if (!dateInput.value || !timeInput.value) {
+                tg.MainButton.hide();
+                confirmCard.classList.remove('visible');
+                return;
+            }
+
+            // Форматируем дату: "Среда, 22 мая"
+            const options = { weekday: 'long', month: 'long', day: 'numeric' };
+            const dateText = selectedDateObj.toLocaleDateString('ru-RU', options);
+            // Делаем первую букву заглавной
+            const dateTextCap = dateText.charAt(0).toUpperCase() + dateText.slice(1);
+
+            // Время
+            const activeTimeChip = document.querySelector('.time-chip.active');
+            const mskTime = activeTimeChip ? activeTimeChip.dataset.msk : '??';
+
+            document.getElementById('ccDate').textContent = dateTextCap;
+            document.getElementById('ccTime').innerHTML = `
+                <span class="cc-highlight">${selectedTimeStr}</span> (по местному)<br>
+                <small>${mskTime} (по вашему)</small>
+            `;
+
+            confirmCard.classList.add('visible');
+            tg.MainButton.show();
+        }
+
+        // --- ВАЛИДАЦИЯ И ОТПРАВКА ---
         function isValidTime() {
             if (!dateInput.value || !timeInput.value) return false;
-
-            // Парсим ввод (YYYY-MM-DD и HH:MM)
+            
             const [year, month, day] = dateInput.value.split('-').map(Number);
             const [hours, minutes] = timeInput.value.split(':').map(Number);
 
-            // 1. Получаем Timestamp встречи в UTC
-            // Формула: UTC = (Время встречи) - (Смещение кандидата)
-            // Пример: Встреча в 14:00 в Алматы (UTC+5). В UTC это 09:00.
-            // Date.UTC считает месяцы с 0 (январь = 0)
+            // UTC встречи
             const meetingUTC = Date.UTC(year, month - 1, day, hours, minutes) - (targetOffset * 60 * 60 * 1000);
-
-            // 2. Получаем текущее время в UTC
             const nowUTC = Date.now();
 
-            // 3. Сравниваем
             return meetingUTC >= nowUTC;
         }
 
@@ -225,22 +386,13 @@
             const time = timeInput.value;
             const comment = document.getElementById('commentInput').value;
 
-            if (!date || !time) {
-                tg.HapticFeedback.notificationOccurred('error');
-                if(!date) dateInput.classList.add('error');
-                if(!time) timeInput.classList.add('error');
-                setTimeout(() => {
-                    dateInput.classList.remove('error');
-                    timeInput.classList.remove('error');
-                }, 1000);
-                return;
-            }
+            if (!date || !time) return;
 
             if (!isValidTime()) {
                 tg.HapticFeedback.notificationOccurred('error');
                 tg.showPopup({
-                    title: 'Ошибка времени',
-                    message: 'Это время уже прошло (по часовому поясу кандидата).',
+                    title: 'Ошибка',
+                    message: 'Это время уже прошло!',
                     buttons: [{type: 'ok'}]
                 });
                 return;
@@ -249,7 +401,8 @@
             tg.MainButton.showProgress();
 
             const fullStr = `${date} в ${time} (${cityName})`;
-
+            
+            // Данные для бота
             const data = {
                 date: date,
                 time: time,
@@ -261,6 +414,8 @@
         });
 
         init();
+        
+        // Цвета
         document.body.style.backgroundColor = tg.themeParams.bg_color || '#ffffff';
         document.body.style.color = tg.themeParams.text_color || '#000000';
 
