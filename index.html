@@ -3,175 +3,286 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>Запись на собеседование</title>
+    <title>HR Calendar Pro</title>
     <script src="https://telegram.org/js/telegram-web-app.js"></script>
     <style>
         :root {
-            /* Базовые цвета (будут переопределены темой Telegram) */
-            --tg-theme-bg-color: #ffffff;
-            --tg-theme-text-color: #000000;
-            --tg-theme-hint-color: #999999;
-            --tg-theme-link-color: #2481cc;
-            --tg-theme-button-color: #2481cc;
-            --tg-theme-button-text-color: #ffffff;
-            --tg-theme-secondary-bg-color: #f0f0f0;
+            --bg-color: var(--tg-theme-bg-color, #fff);
+            --text-color: var(--tg-theme-text-color, #000);
+            --hint-color: var(--tg-theme-hint-color, #888);
+            --btn-color: var(--tg-theme-button-color, #2481cc);
+            --btn-text: var(--tg-theme-button-text-color, #fff);
+            --secondary-bg: var(--tg-theme-secondary-bg-color, #f0f0f0);
+            --danger: #ff3b30;
         }
 
-        body {
-            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
-            background-color: var(--tg-theme-bg-color);
-            color: var(--tg-theme-text-color);
-            margin: 0;
-            padding: 20px;
-            box-sizing: border-box;
-            -webkit-font-smoothing: antialiased;
-        }
-
-        .container {
-            max-width: 400px;
-            margin: 0 auto;
-        }
-
-        h2 {
-            margin-top: 0;
+        body { font-family: -apple-system, BlinkMacSystemFont, sans-serif; background: var(--bg-color); color: var(--text-color); padding: 16px; margin: 0; }
+        h3 { margin: 0 0 10px 0; font-size: 18px; }
+        
+        .timezone-info {
+            background: var(--secondary-bg);
+            padding: 10px;
+            border-radius: 8px;
+            font-size: 13px;
             margin-bottom: 20px;
-            text-align: center;
-            font-weight: 600;
+            border-left: 4px solid var(--btn-color);
         }
+        .tz-row { display: flex; justify-content: space-between; margin-bottom: 4px; }
+        .tz-label { color: var(--hint-color); }
+        .tz-val { font-weight: bold; }
 
-        .form-group {
-            margin-bottom: 20px;
+        .chips-container {
+            display: flex;
+            gap: 8px;
+            overflow-x: auto;
+            padding-bottom: 5px;
+            margin-bottom: 15px;
+            scrollbar-width: none;
         }
+        .chips-container::-webkit-scrollbar { display: none; }
 
-        label {
-            display: block;
-            margin-bottom: 8px;
-            color: var(--tg-theme-hint-color);
+        .chip {
+            background: var(--secondary-bg);
+            padding: 8px 12px;
+            border-radius: 16px;
             font-size: 14px;
-            font-weight: 500;
+            white-space: nowrap;
+            cursor: pointer;
+            transition: 0.2s;
+            border: 1px solid transparent;
+        }
+        .chip.active {
+            background: var(--btn-color);
+            color: var(--btn-text);
         }
 
-        input[type="date"],
-        input[type="time"],
-        textarea,
-        select {
-            width: 100%;
-            padding: 12px;
-            box-sizing: border-box;
-            border: 1px solid var(--tg-theme-hint-color); /* Fallback */
-            border: none;
-            background-color: var(--tg-theme-secondary-bg-color);
-            color: var(--tg-theme-text-color);
-            border-radius: 12px;
-            font-size: 16px;
-            outline: none;
-            transition: all 0.2s;
-            -webkit-appearance: none; /* Убирает дефолтные стили iOS */
+        .input-group { margin-bottom: 20px; }
+        label { display: block; margin-bottom: 8px; color: var(--hint-color); font-size: 14px; }
+        input, textarea {
+            width: 100%; padding: 12px; border-radius: 12px;
+            border: 1px solid var(--secondary-bg);
+            background: var(--secondary-bg);
+            color: var(--text-color);
+            font-size: 16px; box-sizing: border-box; outline: none;
+            -webkit-appearance: none;
         }
-
-        input:focus, textarea:focus {
-            box-shadow: 0 0 0 2px var(--tg-theme-link-color);
-        }
-
-        textarea {
-            resize: vertical;
-            min-height: 80px;
-        }
-
-        /* Анимация ошибки */
-        .shake {
-            animation: shake 0.5s;
-            border: 1px solid #ff3b30 !important;
-        }
-
-        @keyframes shake {
-            0% { transform: translateX(0); }
-            25% { transform: translateX(-5px); }
-            50% { transform: translateX(5px); }
-            75% { transform: translateX(-5px); }
-            100% { transform: translateX(0); }
-        }
-
-        .hint {
-            font-size: 12px;
-            color: var(--tg-theme-hint-color);
-            margin-top: 5px;
-        }
+        input:focus, textarea:focus { border: 1px solid var(--btn-color); }
+        
+        .error { border-color: var(--danger) !important; animation: shake 0.4s; }
+        @keyframes shake { 0%, 100% {transform: translateX(0);} 25% {transform: translateX(-5px);} 75% {transform: translateX(5px);} }
     </style>
 </head>
 <body>
 
-    <div class="container">
-        <h2>Назначить собеседование</h2>
-
-        <div class="form-group">
-            <label for="date">Дата собеседования</label>
-            <input type="date" id="date" required>
+    <div class="timezone-info" id="tzInfo">
+        <div class="tz-row">
+            <span class="tz-label">Город кандидата:</span>
+            <span class="tz-val" id="cityDisplay">Загрузка...</span>
         </div>
-
-        <div class="form-group">
-            <label for="time">Время</label>
-            <input type="time" id="time" required>
-        </div>
-
-        <div class="form-group">
-            <label for="comment">Адрес / Комментарий (видит кандидат)</label>
-            <textarea id="comment" placeholder="Например: Офис 505, вход со двора. Спросить Ольгу."></textarea>
-            <div class="hint">Это сообщение придет кандидату вместе с датой.</div>
+        <div class="tz-row">
+            <span class="tz-label">Разница с вами:</span>
+            <span class="tz-val" id="diffDisplay">...</span>
         </div>
     </div>
 
-    <script>
-        let tg = window.Telegram.WebApp;
-        tg.expand(); // Разворачиваем на весь экран
+    <h3>Дата</h3>
+    <div class="chips-container" id="dateChips"></div>
+    <div class="input-group">
+        <input type="date" id="dateInput">
+    </div>
 
-        // Настраиваем главную кнопку (снизу)
+    <h3>Время (у кандидата)</h3>
+    <div class="chips-container" id="timeChips"></div>
+    <div class="input-group">
+        <input type="time" id="timeInput">
+    </div>
+
+    <div class="input-group">
+        <label>Комментарий (необязательно)</label>
+        <textarea id="commentInput" placeholder="Адрес, код домофона..."></textarea>
+    </div>
+
+    <script>
+        const tg = window.Telegram.WebApp;
+        tg.expand();
         tg.MainButton.text = "ЗАПИСАТЬ";
         tg.MainButton.show();
 
-        // Установка минимальной даты (сегодня)
-        const dateInput = document.getElementById('date');
-        const today = new Date().toISOString().split('T')[0];
-        dateInput.min = today;
+        const urlParams = new URLSearchParams(window.location.search);
+        // Смещение города кандидата (UTC). Если не передано - считаем как у рекрутера
+        const localOffsetMinutes = new Date().getTimezoneOffset() * -1; // В минутах (Москва = 180)
+        const localOffsetHours = localOffsetMinutes / 60;
+        
+        // Берем offset из URL или используем локальный
+        const targetOffset = urlParams.get('offset') ? parseFloat(urlParams.get('offset')) : localOffsetHours;
+        const cityName = urlParams.get('city') || 'Местное время';
 
-        // Обработка клика по кнопке
-        Telegram.WebApp.onEvent('mainButtonClicked', function(){
-            const date = document.getElementById('date').value;
-            const time = document.getElementById('time').value;
-            const comment = document.getElementById('comment').value;
+        const dateInput = document.getElementById('dateInput');
+        const timeInput = document.getElementById('timeInput');
+        
+        // Разница в часах между Кандидатом и Рекрутером
+        // Пример: Кандидат (UTC+5), Рекрутер (UTC+3). diff = 2 часа.
+        // Если Рекрутер ставит 14:00 (по Кандидату), для Рекрутера это 12:00.
+        const diffHours = targetOffset - localOffsetHours;
 
-            // Простая валидация
+        function init() {
+            // Установка мин. даты (сегодня)
+            const now = new Date();
+            dateInput.min = now.toISOString().split('T')[0];
+
+            // Инфо панель
+            document.getElementById('cityDisplay').textContent = `${cityName} (UTC${targetOffset >= 0 ? '+' : ''}${targetOffset})`;
+            
+            if (diffHours === 0) {
+                document.getElementById('diffDisplay').textContent = "Нет разницы";
+                document.getElementById('diffDisplay').style.color = "green";
+            } else {
+                const sign = diffHours > 0 ? "+" : "";
+                document.getElementById('diffDisplay').textContent = `${sign}${diffHours} ч. (у кандидата)`;
+                document.getElementById('diffDisplay').style.color = "var(--btn-color)";
+            }
+
+            renderDateChips();
+            renderTimeChips();
+            
+            // СИНХРОНИЗАЦИЯ: Если меняем input руками, обновляем чипсы
+            dateInput.addEventListener('change', () => {
+                updateChipsUI('dateChips', dateInput.value);
+            });
+            timeInput.addEventListener('change', () => {
+                updateChipsUI('timeChips', timeInput.value);
+            });
+        }
+
+        function renderDateChips() {
+            const container = document.getElementById('dateChips');
+            const days = ['Вс', 'Пн', 'Вт', 'Ср', 'Чт', 'Пт', 'Сб'];
+            
+            for (let i = 0; i < 7; i++) {
+                const d = new Date();
+                d.setDate(d.getDate() + i);
+                const dateStr = d.toISOString().split('T')[0]; // YYYY-MM-DD
+                
+                let label = days[d.getDay()];
+                if (i === 0) label = "Сегодня";
+                if (i === 1) label = "Завтра";
+
+                const chip = document.createElement('div');
+                chip.className = 'chip';
+                chip.dataset.value = dateStr; // Храним значение для поиска
+                chip.textContent = `${label} ${d.getDate()}`;
+                
+                chip.onclick = () => {
+                    dateInput.value = dateStr;
+                    updateChipsUI('dateChips', dateStr);
+                };
+                container.appendChild(chip);
+            }
+        }
+
+        function renderTimeChips() {
+            const container = document.getElementById('timeChips');
+            for (let hour = 9; hour <= 20; hour++) {
+                const timeStr = `${hour < 10 ? '0'+hour : hour}:00`;
+                
+                const chip = document.createElement('div');
+                chip.className = 'chip';
+                chip.dataset.value = timeStr;
+                chip.textContent = timeStr;
+                
+                chip.onclick = () => {
+                    timeInput.value = timeStr;
+                    updateChipsUI('timeChips', timeStr);
+                };
+                container.appendChild(chip);
+            }
+        }
+
+        function updateChipsUI(containerId, value) {
+            document.querySelectorAll(`#${containerId} .chip`).forEach(c => {
+                if (c.dataset.value === value) c.classList.add('active');
+                else c.classList.remove('active');
+            });
+        }
+
+        // === ГЛАВНАЯ ФУНКЦИЯ ВАЛИДАЦИИ ===
+        function isValidTime() {
+            if (!dateInput.value || !timeInput.value) return false;
+
+            // 1. Создаем дату встречи
+            const selectedStr = `${dateInput.value}T${timeInput.value}:00`;
+            const selectedDate = new Date(selectedStr); // Это дата в локальном времени браузера (как будто ввели для себя)
+
+            // 2. Но мы ввели время КАНДИДАТА. Нам нужно понять, сколько времени СЕЙЧАС у кандидата.
+            // Сейчас (UTC)
+            const now = new Date();
+            
+            // Чтобы сравнить корректно, приведем "Выбранное время кандидата" к "Реальному моменту времени (Timestamp)"
+            // Выбранное время - (Смещение кандидата) = Время UTC
+            // Но JS Date создается в локальном смещении.
+            // Алгоритм:
+            // Взять выбранный Timestamp.
+            // Вычесть разницу поясов (diffHours).
+            // Если Рекрутер (UTC+3) ставит 14:00 для Кандидата (UTC+5),
+            // То это 12:00 по времени Рекрутера.
+            
+            const adjustedTimestamp = selectedDate.getTime() - (diffHours * 60 * 60 * 1000);
+            const realMeetingDate = new Date(adjustedTimestamp);
+
+            // 3. Сравниваем с текущим моментом
+            if (realMeetingDate < now) {
+                return false; // В прошлом
+            }
+            return true;
+        }
+
+        tg.MainButton.onClick(function() {
+            const date = dateInput.value;
+            const time = timeInput.value;
+            const comment = document.getElementById('commentInput').value;
+
+            // 1. Проверка на пустоту
             if (!date || !time) {
-                tg.HapticFeedback.notificationOccurred('error'); // Вибрация ошибки
-                if (!date) document.getElementById('date').classList.add('shake');
-                if (!time) document.getElementById('time').classList.add('shake');
-                
-                // Убираем красную рамку через секунду
+                tg.HapticFeedback.notificationOccurred('error');
+                if(!date) dateInput.classList.add('error');
+                if(!time) timeInput.classList.add('error');
                 setTimeout(() => {
-                    document.getElementById('date').classList.remove('shake');
-                    document.getElementById('time').classList.remove('shake');
+                    dateInput.classList.remove('error');
+                    timeInput.classList.remove('error');
                 }, 1000);
-                
                 return;
             }
 
-            // Формируем красивую дату для показа
-            const fullDateStr = `${date} ${time}`;
-            
-            // Собираем данные в JSON
+            // 2. Проверка на прошлое
+            if (!isValidTime()) {
+                tg.HapticFeedback.notificationOccurred('error');
+                tg.showPopup({
+                    title: 'Ошибка времени',
+                    message: 'Вы выбрали время, которое уже прошло для этого кандидата.',
+                    buttons: [{type: 'ok'}]
+                });
+                return;
+            }
+
+            tg.MainButton.showProgress();
+
+            // Формируем красивую строку
+            const fullStr = `${date} в ${time} (${cityName})`;
+
             const data = {
                 date: date,
                 time: time,
-                comment: comment || "", // Пустой коммент, если не заполнили
-                full_str: fullDateStr // Техническая строка
+                comment: comment || "",
+                full_str: fullStr
             };
 
-            // Отправляем данные боту
-            tg.sendData(JSON.stringify(data)); 
+            tg.sendData(JSON.stringify(data));
         });
 
-        // Цветовая схема
-        // Telegram сам подставит цвета через CSS variables, но на всякий случай
+        // Инициализация
+        init();
+        
+        // Цвета темы
         document.body.style.backgroundColor = tg.themeParams.bg_color || '#ffffff';
         document.body.style.color = tg.themeParams.text_color || '#000000';
 
