@@ -175,18 +175,58 @@
     </div>
 
     <script>
+        console.log('🚀 Calendar Mini App starting...');
+        console.log('📱 Telegram WebApp available:', !!window.Telegram?.WebApp);
+        
         const tg = window.Telegram.WebApp;
+        console.log('📱 WebApp object:', tg);
+        console.log('📱 initData:', tg.initData);
+        console.log('📱 initDataUnsafe:', tg.initDataUnsafe);
+        
         tg.expand();
         tg.MainButton.text = "ЗАПИСАТЬ";
         
         // --- ПАРАМЕТРЫ ИЗ TELEGRAM (startapp) ---
         // Формат: {candidate_id}_{city_key}_{utc_offset}_{recruiter_id}
-        const startParam = tg.initDataUnsafe.start_param || "";
+        // КРИТИЧНО: Проверяем несколько источников параметров
+        let startParam = tg.initDataUnsafe.start_param || "";
+        
+        // Если start_param пустой, пробуем взять из URL hash (#tgWebAppData или fragment)
+        if (!startParam && window.location.hash) {
+            const hash = window.location.hash.substring(1);
+            // Ищем параметр startapp в hash
+            const hashParams = new URLSearchParams(hash);
+            startParam = hashParams.get('startapp') || hashParams.get('tgWebAppStartParam') || "";
+            console.log('📱 Got params from hash:', startParam);
+        }
+        
+        // Если все еще пустой, пробуем из URL query
+        if (!startParam) {
+            const urlParams = new URLSearchParams(window.location.search);
+            startParam = urlParams.get('startapp') || urlParams.get('tgWebAppStartParam') || "";
+            console.log('📱 Got params from query:', startParam);
+        }
+        
+        console.log('📱 start_param (final):', startParam);
+        
         const params = startParam.split('_');
         const candidateId = params[0] || null;
         const cityKey = params[1] || "";
         const utcOffset = params[2] ? parseFloat(params[2]) : 3;
         const recruiterId = params[3] || null;
+        
+        console.log('📱 Parsed params:', { candidateId, cityKey, utcOffset, recruiterId });
+        
+        // КРИТИЧНО: Если candidateId все еще null - показываем ошибку
+        if (!candidateId) {
+            console.error('❌ CRITICAL: candidateId is null!');
+            console.error('📱 Available data:', {
+                'initDataUnsafe': tg.initDataUnsafe,
+                'window.location.href': window.location.href,
+                'window.location.hash': window.location.hash,
+                'window.location.search': window.location.search
+            });
+        }
         
         // --- ПАРАМЕТРЫ URL (для обратной совместимости) ---
         const urlParams = new URLSearchParams(window.location.search);
@@ -200,6 +240,7 @@
         const diffHours = targetOffset - MOSCOW_OFFSET;
         
         console.log('📱 Telegram params:', { candidateId, cityKey, utcOffset, recruiterId });
+        console.log('📱 Final config:', { targetOffset, cityName, diffHours });
 
         const dateInput = document.getElementById('dateInput');
         const timeInput = document.getElementById('timeInput');
@@ -210,6 +251,24 @@
         let selectedTimeStr = null;
 
         function init() {
+            // КРИТИЧНО: Проверяем наличие candidateId
+            if (!candidateId || candidateId === 'null') {
+                console.error('❌ candidateId is missing!');
+                document.body.innerHTML = `
+                    <div style="padding: 20px; text-align: center; color: red;">
+                        <h2>❌ Ошибка</h2>
+                        <p>Не указан ID кандидата!</p>
+                        <p style="font-size: 12px;">candidateId: ${candidateId}</p>
+                        <p style="font-size: 12px;">start_param: ${startParam}</p>
+                        <hr>
+                        <p style="font-size: 10px; color: #666;">
+                            Откройте консоль браузера (F12) для подробностей
+                        </p>
+                    </div>
+                `;
+                return;
+            }
+            
             // Установка мин. даты
             const now = new Date();
             dateInput.min = now.toISOString().split('T')[0];
@@ -352,7 +411,15 @@
 
         // --- ОБНОВЛЕНИЕ КАРТОЧКИ ---
         function updateConfirmCard() {
+            console.log('🔄 updateConfirmCard called', {
+                date: dateInput.value,
+                time: timeInput.value,
+                selectedDateObj,
+                selectedTimeStr
+            });
+            
             if (!dateInput.value || !timeInput.value) {
+                console.log('⚠️ Missing date or time, hiding button');
                 tg.MainButton.hide();
                 confirmCard.classList.remove('visible');
                 return;
@@ -376,30 +443,54 @@
 
             confirmCard.classList.add('visible');
             tg.MainButton.show();
+            console.log('✅ Card visible, button shown');
         }
 
         // --- ВАЛИДАЦИЯ И ОТПРАВКА ---
         function isValidTime() {
-            if (!dateInput.value || !timeInput.value) return false;
+            console.log('⏰ isValidTime called');
+            
+            if (!dateInput.value || !timeInput.value) {
+                console.log('❌ No date or time');
+                return false;
+            }
             
             const [year, month, day] = dateInput.value.split('-').map(Number);
             const [hours, minutes] = timeInput.value.split(':').map(Number);
 
+            console.log('📅 Parsed:', { year, month, day, hours, minutes });
+
             // UTC встречи
             const meetingUTC = Date.UTC(year, month - 1, day, hours, minutes) - (targetOffset * 60 * 60 * 1000);
             const nowUTC = Date.now();
+            
+            const isValid = meetingUTC >= nowUTC;
+            console.log('⏰ Time validation:', {
+                meetingUTC: new Date(meetingUTC),
+                nowUTC: new Date(nowUTC),
+                isValid
+            });
 
-            return meetingUTC >= nowUTC;
+            return isValid;
         }
 
         tg.MainButton.onClick(function() {
+            console.log('🔵 MainButton CLICKED!');
+            
             const date = dateInput.value;
             const time = timeInput.value;
             const comment = document.getElementById('commentInput').value;
 
-            if (!date || !time) return;
+            console.log('📋 Form data:', { date, time, comment, candidateId });
+
+            if (!date || !time) {
+                console.log('❌ Missing date or time');
+                tg.showAlert('Выберите дату и время');
+                return;
+            }
 
             if (!isValidTime()) {
+                console.log('❌ Time validation failed');
                 tg.HapticFeedback.notificationOccurred('error');
                 tg.showPopup({
                     title: 'Ошибка',
@@ -409,6 +500,7 @@
                 return;
             }
 
+            console.log('✅ Validation passed, preparing to send...');
             tg.MainButton.showProgress();
 
             const fullStr = `${date} в ${time} (${cityName})`;
@@ -422,8 +514,15 @@
                 full_str: fullStr
             };
             
-            console.log('📤 Sending data to bot:', data);
-            tg.sendData(JSON.stringify(data));
+            console.log('📤 Sending data to bot:', JSON.stringify(data, null, 2));
+            
+            try {
+                tg.sendData(JSON.stringify(data));
+                console.log('✅ Data sent successfully!');
+            } catch (error) {
+                console.error('❌ Error sending data:', error);
+                tg.showAlert('Ошибка отправки данных');
+            }
         });
 
         init();
