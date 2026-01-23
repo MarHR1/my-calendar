@@ -179,16 +179,27 @@
         tg.expand();
         tg.MainButton.text = "ЗАПИСАТЬ";
         
-        // --- ПАРАМЕТРЫ URL ---
+        // --- ПАРАМЕТРЫ ИЗ TELEGRAM (startapp) ---
+        // Формат: {candidate_id}_{city_key}_{utc_offset}_{recruiter_id}
+        const startParam = tg.initDataUnsafe.start_param || "";
+        const params = startParam.split('_');
+        const candidateId = params[0] || null;
+        const cityKey = params[1] || "";
+        const utcOffset = params[2] ? parseFloat(params[2]) : 3;
+        const recruiterId = params[3] || null;
+        
+        // --- ПАРАМЕТРЫ URL (для обратной совместимости) ---
         const urlParams = new URLSearchParams(window.location.search);
         const MOSCOW_OFFSET = 3; 
-        const targetOffset = urlParams.get('offset') ? parseFloat(urlParams.get('offset')) : 3;
-        const cityName = urlParams.get('city') || 'Местное время';
-        const candidateName = urlParams.get('name') || 'Кандидат'; // Можно передать ?name=Иван
+        const targetOffset = urlParams.get('offset') ? parseFloat(urlParams.get('offset')) : utcOffset;
+        const cityName = urlParams.get('city') || cityKey || 'Местное время';
+        const candidateName = urlParams.get('name') || 'Кандидат';
 
         // Разница: Кандидат(5) - МСК(3) = +2. 
         // Если у кандидата 14:00, то по МСК = 14 - 2 = 12:00.
         const diffHours = targetOffset - MOSCOW_OFFSET;
+        
+        console.log('📱 Telegram params:', { candidateId, cityKey, utcOffset, recruiterId });
 
         const dateInput = document.getElementById('dateInput');
         const timeInput = document.getElementById('timeInput');
@@ -402,14 +413,16 @@
 
             const fullStr = `${date} в ${time} (${cityName})`;
             
-            // Данные для бота
+            // ✅ КРИТИЧНО: Данные для бота с candidate_id
             const data = {
+                candidate_id: candidateId,  // ← ОБЯЗАТЕЛЬНО!
                 date: date,
                 time: time,
                 comment: comment || "",
                 full_str: fullStr
             };
-
+            
+            console.log('📤 Sending data to bot:', data);
             tg.sendData(JSON.stringify(data));
         });
 
